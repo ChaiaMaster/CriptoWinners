@@ -3,7 +3,6 @@ import logging
 import psycopg2  # Librería para la base de datos
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
-import asyncio 
 
 # --- 1. Configuración Inicial y Constantes ---
 
@@ -14,14 +13,13 @@ logging.basicConfig(
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 DATABASE_URL = os.environ.get("DATABASE_URL")  # Railway la detecta automáticamente
-# 🚨 AÑADE TU ID DE TELEGRAM AQUÍ PARA RECIBIR LOS CANJES
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0")) 
 
 PORT = int(os.environ.get('PORT', '8080'))
 CHANNEL_ID = -1002925650616 
 CHANNEL_USERNAME = "finanzas0inversion"
 
-# Los puntos por referido
+# Puntos por referido según tu última edición
 PUNTOS_POR_REFERIDO = 100
 
 BOT_LINKS = {
@@ -60,13 +58,17 @@ def init_db():
 
 def get_user_points(user_id):
     """Obtiene los puntos de un usuario."""
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    cur.execute("SELECT puntos FROM usuarios WHERE user_id = %s", (user_id,))
-    result = cur.fetchone()
-    cur.close()
-    conn.close()
-    return result[0] if result else 0
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("SELECT puntos FROM usuarios WHERE user_id = %s", (user_id,))
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+        return result[0] if result else 0
+    except Exception as e:
+        logging.error(f"Error al obtener puntos: {e}")
+        return 0
 
 def register_user(user_id, referrer_id=None):
     """Registra un nuevo usuario y retorna True si es nuevo."""
@@ -85,12 +87,15 @@ def register_user(user_id, referrer_id=None):
 
 def add_points(user_id, points):
     """Suma puntos a un usuario existente."""
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    cur.execute("UPDATE usuarios SET puntos = puntos + %s WHERE user_id = %s", (points, user_id))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("UPDATE usuarios SET puntos = puntos + %s WHERE user_id = %s", (points, user_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logging.error(f"Error al sumar puntos: {e}")
 
 # --- 3. Funciones de Interfaz ---
 
@@ -116,7 +121,7 @@ async def check_subscription(user_id: int, context: ContextTypes.DEFAULT_TYPE) -
         member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
     except Exception as e:
-        logging.error(f"Error suscripción: {e}")
+        logging.error(f"Error suscripción para {user_id}: {e}")
         return False 
 
 # --- 5. Handler /start con REFERIDOS (SQL) ---
@@ -138,15 +143,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     es_nuevo = register_user(user_id, referrer_id)
     
     if es_nuevo and referrer_id:
-        # Si es nuevo y traía referido, sumamos puntos al que invitó
         add_points(referrer_id, PUNTOS_POR_REFERIDO)
         try:
             await context.bot.send_message(
                 chat_id=referrer_id, 
                 text=f"🔥 ¡Un pana se unió con tu link! Ganaste {PUNTOS_POR_REFERIDO} puntos."
             )
-        except Exception as e:
-            logging.error(f"No se pudo avisar al referrer {referrer_id}: {e}")
+        except Exception:
+            pass
 
     is_member = await check_subscription(user_id, context)
     
@@ -179,7 +183,6 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup = create_inline_keyboard(BOT_LINKS[text_received])
 
     elif text_received == "🎁 Canje de Puntos":
-        # Consultamos puntos a la Base de Datos
         puntos = get_user_points(user_id)
         response_text = (
             f"🎁 <b>Balance Actual</b>\n"
@@ -228,9 +231,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         else:
             await query.answer("❌ Error: Admin no configurado.")
 
-# --- 8. Motor Principal ---
+# --- 8. Función Principal (Síncrona para evitar errores de loop) ---
 
-async def main() -> None: 
+def main():
     if not BOT_TOKEN:
         logging.error("❌ TOKEN NO CONFIGURADO")
         return
@@ -238,29 +241,31 @@ async def main() -> None:
     # Inicializamos la tabla en la base de datos
     init_db()
     
-    # Ya no usamos PicklePersistence porque usamos PostgreSQL
+    # Construimos la aplicación de forma síncrona
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Handlers
+    # Registramos handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button_text))
     application.add_handler(CallbackQueryHandler(callback_handler))
     
-    # Lógica Webhook para Railway
-    RAILWAY_STATIC_URL = os.environ.get("RAILWAY_STATIC_URL")
-    if RAILWAY_STATIC_URL:
-        webhook_url = f"https://{RAILWAY_STATIC_URL}"
-        await application.initialize()
-        await application.start()
-        await application.bot.delete_webhook()
-        await application.updater.start_webhook(
-            listen="0.0.0.0", port=PORT, url_path=BOT_TOKEN,
-            webhook_url=f"{webhook_url}/{BOT_TOKEN}",
-            allowed_updates=Update.ALL_TYPES 
+    # Lógica de Ejecución
+    RAILWAY_URL = os.environ.get("RAILWAY_STATIC_URL")
+    
+    if RAILWAY_URL:
+        # MODO PRODUCCIÓN: WEBHOOK
+        logging.info(f"🚀 Iniciando Webhook en {RAILWAY_URL} puerto {PORT}")
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=BOT_TOKEN,
+            webhook_url=f"https://{RAILWAY_URL}/{BOT_TOKEN}",
+            allowed_updates=Update.ALL_TYPES
         )
-        await asyncio.Future() 
     else:
-        await application.run_polling()
+        # MODO DESARROLLO: POLLING
+        logging.info("🚀 Iniciando Polling...")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main() # Llamada directa sin asyncio.run()

@@ -250,7 +250,7 @@ def main():
     application.add_handler(CallbackQueryHandler(callback_handler))
     
     # Lógica de Ejecución
-    RAILWAY_URL = os.environ.get("RAILWAY_STATIC_URL")
+    RAILWAY_URL = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
     
     if RAILWAY_URL:
         # MODO PRODUCCIÓN: WEBHOOK
@@ -269,3 +269,4 @@ def main():
 
 if __name__ == '__main__':
     main() # Llamada directa sin asyncio.run()
+

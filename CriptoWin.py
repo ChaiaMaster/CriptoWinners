@@ -28,14 +28,14 @@ BOT_LINKS = {
         ("🤖 Mineria DOGE ⛏️", "https://t.me/dogecoingeneratorbot?start=14435")
     ],
     "💎 TON": [
-        ("🤖 Gana en TON 💎", "https://t.me/TonFreepayrobot?start=7923932490")
+        ("🤖 Gana en TON 💎", "https://t.me/OilTycoonTON_bot/game?startapp=ii_273829196")
     ],
     "🪙 USDT": [
-        ("🤖 Gana en USDT 💰", "https://t.me/SallyEbot?start=273829196"),
+        ("🤖 Gana en USDT 💰", "https://t.me/GmailFProBot?start=273829196"),
         ("🤖 Staking USDT 🔐","https://t.me/Mine_Fi_bot/mine?startapp=r_b9m339z3m6tm")
     ],
     "🌐 WEBs": [
-        ("🔗 Web mineria en DOGE", "https://dogestation.com/register.php?ref=69553518")
+        ("🔗 Web mineria en DOGE", "https://t.me/+WNsNDyjmf7PAihoN")
     ]
 }
 
@@ -187,7 +187,7 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         response_text = (
             f"🎁 <b>Balance Actual</b>\n"
             f"Tienes: <b>{puntos}</b> puntos.\n\n"
-            f"Para canjear tus servicios de automatización o asesoría, dale al botón de abajo y el admin recibirá tu solicitud."
+            f"Puedes canjear tus puntos por:\n- Servicios de automatización.\n- Dogecoins. (1000pts = 0.1 DOGE)\n- Acceso a bots exclusivos."
         )
         reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("📩 Solicitar Canje al Admin", callback_data="solicitar_canje")]])
         
@@ -269,4 +269,5 @@ def main():
 
 if __name__ == '__main__':
     main() # Llamada directa sin asyncio.run()
+
 

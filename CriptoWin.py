@@ -49,7 +49,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS usuarios (
             user_id BIGINT PRIMARY KEY,
             puntos INTEGER DEFAULT 0,
-            referido_por BIGINT
+            referido_por BIGINT,
+            ultimo_bono TIMESTAMP,
+            billetera TEXT
         )
     ''')
     conn.commit()
@@ -61,8 +63,8 @@ def get_user_points(user_id):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        cur.execute("SELECT puntos FROM usuarios WHERE user_id = %s", (user_id,))
-        result = cur.fetchone()
+        cur.execute("SELECT puntos, ultimo_bono, billetera FROM usuarios WHERE user_id = %s", (user_id,))
+        res = cur.fetchone()
         cur.close()
         conn.close()
         return result[0] if result else 0
@@ -70,6 +72,14 @@ def get_user_points(user_id):
         logging.error(f"Error al obtener puntos: {e}")
         return 0
 
+def update_wallet(user_id, wallet):
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    cur.execute("UPDATE usuarios SET billetera = %s WHERE user_id = %s", (wallet, user_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    
 def register_user(user_id, referrer_id=None):
     """Registra un nuevo usuario y retorna True si es nuevo."""
     conn = psycopg2.connect(DATABASE_URL)
@@ -103,7 +113,7 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton("🐶 DOGEs"), KeyboardButton("💎 TON")],
         [KeyboardButton("🪙 USDT"), KeyboardButton("🌐 WEBs")],
-        [KeyboardButton("🎁 Canje de Puntos"), KeyboardButton("👥 Referidos")],
+        [KeyboardButton("💰 Balance"), KeyboardButton("👥 Referidos")],
         [KeyboardButton("👤 Soporte")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -182,15 +192,24 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         response_text = f"Has seleccionado <b>{text_received}</b>. Aquí tienes los enlaces 👇"
         reply_markup = create_inline_keyboard(BOT_LINKS[text_received])
 
-    elif text_received == "🎁 Canje de Puntos":
-        puntos = get_user_points(user_id)
+    elif text_received == "💰 Balance":
+        puntos, _, billetera = get_user_points(user_id)
+        fecha = datetime.now().strftime("%d/%m/%Y")
         response_text = (
-            f"🎁 <b>Balance Actual</b>\n"
-            f"Tienes: <b>{puntos}</b> puntos.\n\n"
-            f"Puedes canjear tus puntos por:\n- Servicios de automatización.\n- Dogecoins. (1000pts = 0.1 DOGE)\n- Acceso a bots exclusivos."
+            f"💰 <b>MI BALANCE</b>\n\n"
+            f"👤 <b>ID:</b> <code>{user_id}</code>\n"
+            f"💵 <b>Saldo:</b> <code>{puntos} puntos</code>\n"
+            f"📅 <b>Fecha:</b> {fecha}\n"
+            f"👛 <b>Billetera:</b> <code>{billetera if billetera else 'No configurada'}</code>"
         )
-        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("📩 Solicitar Canje al Admin", callback_data="solicitar_canje")]])
-        
+        btns = [
+            [InlineKeyboardButton("🎁 Bono", callback_data="bono_diario"),
+             InlineKeyboardButton("👛 Billetera", callback_data="config_wallet")],
+            [InlineKeyboardButton("📩 Solicitar Canje al Admin", callback_data="solicitar_canje")]
+        ]
+        await update.message.reply_text(msg, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(btns))
+
+    
     elif text_received == "👥 Referidos":
         referral_link = f"https://t.me/{context.bot.username}?start={user_id}" 
         response_text = (
@@ -231,6 +250,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         else:
             await query.answer("❌ Error: Admin no configurado.")
 
+# --- 2. Servidor de Health Check para Railway ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health' or self.path == '/':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def run_health_server():
+    # Usamos un puerto distinto o el mismo si Railway lo permite
+    # Nota: Si usas Webhooks, el bot ya ocupa el PORT. Railway detecta el puerto abierto.
+    server = HTTPServer(('0.0.0.0', PORT + 1), HealthCheckHandler)
+    server.serve_forever()
 # --- 8. Función Principal (Síncrona para evitar errores de loop) ---
 
 def main():
@@ -269,5 +304,6 @@ def main():
 
 if __name__ == '__main__':
     main() # Llamada directa sin asyncio.run()
+
 
 

@@ -20,19 +20,19 @@ CHANNEL_ID = -1002925650616
 CHANNEL_USERNAME = "finanzas0inversion"
 
 # Puntos por referido según tu última edición
-PUNTOS_POR_REFERIDO = 100
+PUNTOS_POR_REFERIDO = 0.01
 
 BOT_LINKS = {
     "🐶 DOGEs": [
-        ("🤖 Gana en DOGE 🪙", "https://t.me/CryptoDogePayBot?start=user445676"),
+        ("🤖 Gana en DOGE 🪙", "https://t.me/DogeStation_Bot?start=273829196"),
         ("🤖 Mineria DOGE ⛏️", "https://t.me/dogecoingeneratorbot?start=14435")
     ],
     "💎 TON": [
-        ("🤖 Gana en TON 💎", "https://t.me/OilTycoonTON_bot/game?startapp=ii_273829196")
+        ("🤖 Gana en TON 💎", "https://t.me/OilTycoonTON_bot/game?startapp=ai_273829196")
     ],
     "🪙 USDT": [
         ("🤖 Gana en USDT 💰", "https://t.me/GmailFProBot?start=273829196"),
-        ("🤖 Staking USDT 🔐","https://t.me/Mine_Fi_bot/mine?startapp=r_b9m339z3m6tm")
+        ("🤖 Staking USDT 🔐","https://t.me/USDT_STAKING_App_bot?start=ref_223895")
     ],
     "🌐 WEBs": [
         ("🔗 Web mineria en DOGE", "https://t.me/+WNsNDyjmf7PAihoN")
@@ -103,7 +103,7 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton("🐶 DOGEs"), KeyboardButton("💎 TON")],
         [KeyboardButton("🪙 USDT"), KeyboardButton("🌐 WEBs")],
-        [KeyboardButton("🎁 Canje de Puntos"), KeyboardButton("👥 Referidos")],
+        [KeyboardButton("💰 Balance"), KeyboardButton("👥 Referidos")],
         [KeyboardButton("👤 Soporte")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -147,7 +147,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         try:
             await context.bot.send_message(
                 chat_id=referrer_id, 
-                text=f"🔥 ¡Un pana se unió con tu link! Ganaste {PUNTOS_POR_REFERIDO} puntos."
+                text=f"🔥 ¡Un amigo se unió con tu link! Ganaste {PUNTOS_POR_REFERIDO} DOGE."
             )
         except Exception:
             pass
@@ -182,19 +182,19 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         response_text = f"Has seleccionado <b>{text_received}</b>. Aquí tienes los enlaces 👇"
         reply_markup = create_inline_keyboard(BOT_LINKS[text_received])
 
-    elif text_received == "🎁 Canje de Puntos":
+    elif text_received == "💰 Balance":
         puntos = get_user_points(user_id)
         response_text = (
             f"🎁 <b>Balance Actual</b>\n"
-            f"Tienes: <b>{puntos}</b> puntos.\n\n"
-            f"Puedes canjear tus puntos por:\n- Servicios de automatización.\n- Dogecoins. (1000pts = 0.1 DOGE)\n- Acceso a bots exclusivos."
+            f"Tienes: <b>{puntos}</b> DOGE.\n\n"
+            f"Puedes retirar tus DOGE aqui.\n(Minimo de retiro = 0.1 DOGE)."
         )
-        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("📩 Solicitar Canje al Admin", callback_data="solicitar_canje")]])
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("📩 Solicitar retiro al Admin", callback_data="solicitar_canje")]])
         
     elif text_received == "👥 Referidos":
         referral_link = f"https://t.me/{context.bot.username}?start={user_id}" 
         response_text = (
-            f"👥 <b>¡Gana Puntos Invitando!</b>\n\n"
+            f"👥 <b>¡Gana DOGE invitando amigos!</b>\n\n"
             f"Tu link único:\n<code>{referral_link}</code>\n\n"
             f"¡Ganas {PUNTOS_POR_REFERIDO} puntos por cada referido real! 🚀"
         )
@@ -224,7 +224,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         if ADMIN_ID != 0:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"🚨 <b>SOLICITUD DE CANJE</b>\n\nUsuario: {user.first_name} (@{user.username})\nID: {user.id}\nSaldo: {puntos} puntos.",
+                text=f"🚨 <b>SOLICITUD DE RETIRO</b>\n\nUsuario: {user.first_name} (@{user.username})\nID: {user.id}\nSaldo: {puntos} puntos.",
                 parse_mode='HTML'
             )
             await query.answer("✅ Solicitud enviada. El admin te contactará.")

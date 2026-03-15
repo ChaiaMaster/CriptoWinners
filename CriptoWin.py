@@ -196,7 +196,7 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         response_text = (
             f"👥 <b>¡Gana DOGE invitando amigos!</b>\n\n"
             f"Tu link único:\n<code>{referral_link}</code>\n\n"
-            f"¡Ganas {PUNTOS_POR_REFERIDO} puntos por cada referido real! 🚀"
+            f"¡Ganas {PUNTOS_POR_REFERIDO} DOGE por cada referido real! 🚀"
         )
         reply_markup = None
 

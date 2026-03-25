@@ -128,6 +128,19 @@ def get_user_points(user_id):
         logging.error(f"Error al obtener puntos: {e}")
         return Decimal("0")
 
+
+def format_doge_display(amount) -> str:
+    """Muestra cantidades legibles (evita 0E-8 u otra notación científica de Decimal/NUMERIC)."""
+    if amount is None:
+        return "0"
+    try:
+        d = amount if isinstance(amount, Decimal) else Decimal(str(amount))
+    except Exception:
+        return str(amount)
+    text = f"{d:.8f}".rstrip("0").rstrip(".")
+    return text if text else "0"
+
+
 def register_user(user_id, referrer_id=None):
     """Registra un nuevo usuario y retorna True si es nuevo."""
     conn = psycopg2.connect(DATABASE_URL)
@@ -247,7 +260,7 @@ async def try_grant_referral_after_subscription(
                 chat_id=result,
                 text=(
                     f"🔥 ¡Un referido se unió al canal y validó tu invitación! "
-                    f"Ganaste {PUNTOS_POR_REFERIDO} DOGE."
+                    f"Ganaste {format_doge_display(PUNTOS_POR_REFERIDO)} DOGE."
                 ),
             )
         except Exception:
@@ -333,7 +346,7 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         puntos = get_user_points(user_id)
         response_text = (
             f"🎁 <b>Balance Actual</b>\n"
-            f"Tienes: <b>{puntos}</b> DOGE.\n\n"
+            f"Tienes: <b>{format_doge_display(puntos)}</b> DOGE.\n\n"
             f"Puedes retirar tus DOGE aqui.\n(Minimo de retiro = 0.1 DOGE)."
         )
         reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("📩 Solicitar retiro al Admin", callback_data="solicitar_canje")]])
@@ -343,7 +356,7 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         response_text = (
             f"👥 <b>¡Gana DOGE invitando amigos!</b>\n\n"
             f"Tu link único:\n<code>{referral_link}</code>\n\n"
-            f"¡Ganas {PUNTOS_POR_REFERIDO} DOGE cuando tu invitado se une al canal "
+            f"¡Ganas {format_doge_display(PUNTOS_POR_REFERIDO)} DOGE cuando tu invitado se une al canal "
             f"y usa el bot! (Límite anti-abuso: {MAX_REFERRALS_PER_24H} recompensas por invitador cada 24 h.) 🚀"
         )
         reply_markup = None
@@ -374,7 +387,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         if ADMIN_ID != 0:
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"🚨 <b>SOLICITUD DE RETIRO</b>\n\nUsuario: {user.first_name} (@{user.username})\nID: {user.id}\nSaldo: {puntos} puntos.",
+                text=f"🚨 <b>SOLICITUD DE RETIRO</b>\n\nUsuario: {user.first_name} (@{user.username})\nID: {user.id}\nSaldo: {format_doge_display(puntos)} DOGE.",
                 parse_mode='HTML'
             )
             await query.answer("✅ Solicitud enviada. El admin te contactará.")

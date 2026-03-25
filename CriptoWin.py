@@ -1,5 +1,7 @@
 import os
 import logging
+from decimal import Decimal
+
 import psycopg2  # Librería para la base de datos
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
@@ -19,8 +21,11 @@ PORT = int(os.environ.get('PORT', '8080'))
 CHANNEL_ID = -1002925650616 
 CHANNEL_USERNAME = "finanzas0inversion"
 
-# Puntos por referido según tu última edición
-PUNTOS_POR_REFERIDO = 0.01
+# Puntos por referido (NUMERIC en BD; usar Decimal para no perder fracciones)
+PUNTOS_POR_REFERIDO = Decimal("0.01")
+
+# Máximo de recompensas por referido que un mismo usuario puede generar en 24 h (anti-abuso)
+MAX_REFERRALS_PER_24H = int(os.environ.get("MAX_REFERRALS_PER_24H", "30"))
 
 BOT_LINKS = {
     "🐶 DOGEs": [
@@ -42,16 +47,67 @@ BOT_LINKS = {
 # --- 2. Funciones de Base de Datos (SQL) ---
 
 def init_db():
-    """Crea la tabla de usuarios si no existe."""
+    """Crea tablas y aplica migraciones ligeras (puntos decimales, anti-abuso referidos)."""
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
     cur.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             user_id BIGINT PRIMARY KEY,
-            puntos INTEGER DEFAULT 0,
-            referido_por BIGINT
+            puntos NUMERIC(20, 8) DEFAULT 0 NOT NULL,
+            referido_por BIGINT,
+            recompensa_referido_pagada BOOLEAN DEFAULT FALSE NOT NULL
         )
     ''')
+    cur.execute('''
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'usuarios'
+                  AND column_name = 'puntos' AND data_type = 'integer'
+            ) THEN
+                ALTER TABLE usuarios
+                    ALTER COLUMN puntos TYPE NUMERIC(20, 8) USING puntos::numeric;
+            END IF;
+        END $$;
+    ''')
+    cur.execute('''
+        ALTER TABLE usuarios
+        ADD COLUMN IF NOT EXISTS recompensa_referido_pagada BOOLEAN DEFAULT FALSE NOT NULL
+    ''')
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS referral_rewards_log (
+            id BIGSERIAL PRIMARY KEY,
+            referrer_id BIGINT NOT NULL,
+            referred_id BIGINT NOT NULL UNIQUE,
+            rewarded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    ''')
+    cur.execute('''
+        CREATE INDEX IF NOT EXISTS idx_referral_rewards_referrer_time
+        ON referral_rewards_log (referrer_id, rewarded_at)
+    ''')
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            name TEXT PRIMARY KEY
+        )
+    ''')
+    cur.execute(
+        "SELECT 1 FROM schema_migrations WHERE name = %s",
+        ("backfill_recompensa_referido_v1",),
+    )
+    if cur.fetchone() is None:
+        cur.execute(
+            """
+            UPDATE usuarios
+            SET recompensa_referido_pagada = TRUE
+            WHERE referido_por IS NOT NULL
+            """
+        )
+        cur.execute(
+            "INSERT INTO schema_migrations (name) VALUES (%s)",
+            ("backfill_recompensa_referido_v1",),
+        )
     conn.commit()
     cur.close()
     conn.close()
@@ -65,10 +121,12 @@ def get_user_points(user_id):
         result = cur.fetchone()
         cur.close()
         conn.close()
-        return result[0] if result else 0
+        if result and result[0] is not None:
+            return result[0]
+        return Decimal("0")
     except Exception as e:
         logging.error(f"Error al obtener puntos: {e}")
-        return 0
+        return Decimal("0")
 
 def register_user(user_id, referrer_id=None):
     """Registra un nuevo usuario y retorna True si es nuevo."""
@@ -96,6 +154,104 @@ def add_points(user_id, points):
         conn.close()
     except Exception as e:
         logging.error(f"Error al sumar puntos: {e}")
+
+
+def _grant_referral_reward_tx(referred_user_id: int):
+    """
+    Si el usuario fue referido, aún no se pagó recompensa y el referidor no superó el límite 24h,
+    suma PUNTOS_POR_REFERIDO al referidor y marca como pagada. Devuelve el referidor pagado o None.
+    """
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        conn.autocommit = False
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT referido_por, recompensa_referido_pagada
+            FROM usuarios
+            WHERE user_id = %s
+            FOR UPDATE
+            """,
+            (referred_user_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            return None
+        referrer_id, ya_pagada = row
+        if referrer_id is None or ya_pagada:
+            conn.rollback()
+            return None
+
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM referral_rewards_log
+            WHERE referrer_id = %s AND rewarded_at > NOW() - INTERVAL '24 hours'
+            """,
+            (referrer_id,),
+        )
+        if cur.fetchone()[0] >= MAX_REFERRALS_PER_24H:
+            conn.rollback()
+            logging.warning(
+                "Referido omitido por límite 24h: referidor=%s referido=%s",
+                referrer_id,
+                referred_user_id,
+            )
+            return "rate_limited"
+
+        cur.execute(
+            "UPDATE usuarios SET puntos = puntos + %s WHERE user_id = %s",
+            (PUNTOS_POR_REFERIDO, referrer_id),
+        )
+        cur.execute(
+            "UPDATE usuarios SET recompensa_referido_pagada = TRUE WHERE user_id = %s",
+            (referred_user_id,),
+        )
+        cur.execute(
+            """
+            INSERT INTO referral_rewards_log (referrer_id, referred_id)
+            VALUES (%s, %s)
+            """,
+            (referrer_id, referred_user_id),
+        )
+        conn.commit()
+        return referrer_id
+    except psycopg2.IntegrityError as exc:
+        conn.rollback()
+        if getattr(exc, "pgcode", None) == "23505":
+            return None
+        logging.error(f"Error de integridad al otorgar referido: {exc}")
+        return None
+    except Exception as e:
+        conn.rollback()
+        logging.error(f"Error al otorgar recompensa de referido: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+async def try_grant_referral_after_subscription(
+    referred_user_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    is_subscribed: bool,
+) -> None:
+    """Solo paga referido si está en el canal (evita cuentas fantasma que nunca se unen)."""
+    if not is_subscribed:
+        return
+    result = _grant_referral_reward_tx(referred_user_id)
+    if result == "rate_limited":
+        return
+    if isinstance(result, int):
+        try:
+            await context.bot.send_message(
+                chat_id=result,
+                text=(
+                    f"🔥 ¡Un referido se unió al canal y validó tu invitación! "
+                    f"Ganaste {PUNTOS_POR_REFERIDO} DOGE."
+                ),
+            )
+        except Exception:
+            pass
 
 # --- 3. Funciones de Interfaz ---
 
@@ -139,22 +295,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         except ValueError:
             pass
 
-    # Registro en la base de datos
-    es_nuevo = register_user(user_id, referrer_id)
-    
-    if es_nuevo and referrer_id:
-        add_points(referrer_id, PUNTOS_POR_REFERIDO)
-        try:
-            await context.bot.send_message(
-                chat_id=referrer_id, 
-                text=f"🔥 ¡Un amigo se unió con tu link! Ganaste {PUNTOS_POR_REFERIDO} DOGE."
-            )
-        except Exception:
-            pass
+    register_user(user_id, referrer_id)
 
     is_member = await check_subscription(user_id, context)
-    
     if is_member:
+        await try_grant_referral_after_subscription(user_id, context, True)
         reply_text = f"¡<b>Épale, {user.first_name}!</b> Bienvenido al menú. ✅\nSelecciona una opción abajo."
         reply_markup = get_main_keyboard()
     else:
@@ -177,7 +322,9 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not is_member:
         await start_command(update, context)
         return
-        
+
+    await try_grant_referral_after_subscription(user_id, context, True)
+
     if text_received in BOT_LINKS:
         response_text = f"Has seleccionado <b>{text_received}</b>. Aquí tienes los enlaces 👇"
         reply_markup = create_inline_keyboard(BOT_LINKS[text_received])
@@ -196,7 +343,8 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         response_text = (
             f"👥 <b>¡Gana DOGE invitando amigos!</b>\n\n"
             f"Tu link único:\n<code>{referral_link}</code>\n\n"
-            f"¡Ganas {PUNTOS_POR_REFERIDO} DOGE por cada referido real! 🚀"
+            f"¡Ganas {PUNTOS_POR_REFERIDO} DOGE cuando tu invitado se une al canal "
+            f"y usa el bot! (Límite anti-abuso: {MAX_REFERRALS_PER_24H} recompensas por invitador cada 24 h.) 🚀"
         )
         reply_markup = None
 
@@ -220,6 +368,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user = query.from_user
     
     if query.data == "solicitar_canje":
+        if await check_subscription(user.id, context):
+            await try_grant_referral_after_subscription(user.id, context, True)
         puntos = get_user_points(user.id)
         if ADMIN_ID != 0:
             await context.bot.send_message(

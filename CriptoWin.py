@@ -29,18 +29,19 @@ MAX_REFERRALS_PER_24H = int(os.environ.get("MAX_REFERRALS_PER_24H", "30"))
 
 BOT_LINKS = {
     "🐶 DOGEs": [
-        ("🤖 Gana en DOGE 🪙", "https://t.me/DogeStation_Bot?start=273829196"),
         ("🤖 Mineria DOGE ⛏️", "https://t.me/dogecoingeneratorbot?start=14435")
     ],
     "💎 TON": [
-        ("🤖 Gana en TON 💎", "https://t.me/OilTycoonTON_bot/game?startapp=ai_273829196")
+        ("🤖 Gana en TON 💎", "https://t.me/OilTycoonTON_bot/game?startapp=ai_273829196"),
+        ("🤖 Dulces TON 💎", "https://t.me/dulcecandybot?start=273829196"),
+        ("🤖 Mina tus GRAM 💎", "https://t.me/minegramtonbot?start=273829196")
     ],
     "🪙 USDT": [
         ("🤖 Gana en USDT 💰", "https://t.me/GmailFProBot?start=273829196"),
-        ("🤖 Staking USDT 🔐","https://t.me/USDT_STAKING_App_bot?start=ref_223895")
+        ("🤖 Wallet USDT 🔐","https://t.me/FaucetWallet_bot?start=KN58XCX4")
     ],
     "🌐 WEBs": [
-        ("🔗 Web mineria en DOGE", "https://t.me/+WNsNDyjmf7PAihoN")
+        ("🔗 Canal De Peliculas", "https://t.me/+WNsNDyjmf7PAihoN")
     ]
 }
 
@@ -357,7 +358,7 @@ async def handle_button_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"👥 <b>¡Gana DOGE invitando amigos!</b>\n\n"
             f"Tu link único:\n<code>{referral_link}</code>\n\n"
             f"¡Ganas {format_doge_display(PUNTOS_POR_REFERIDO)} DOGE cuando tu invitado se une al canal "
-            f"y usa el bot! (Límite anti-abuso: {MAX_REFERRALS_PER_24H} recompensas por invitador cada 24 h.) 🚀"
+            f"y usa el bot! 🚀"
         )
         reply_markup = None
 

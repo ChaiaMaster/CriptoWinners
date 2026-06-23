@@ -31,7 +31,8 @@ MAX_REFERRALS_PER_24H = int(os.environ.get("MAX_REFERRALS_PER_24H", "30"))
 
 BOT_LINKS = {
     "🐶 DOGEs": [
-        ("🤖 Mineria DOGE ⛏️", "https://t.me/dogecoingeneratorbot?start=14435")
+        ("🤖 Mineria DOGE ⛏️", "https://t.me/dogecoingeneratorbot?start=14435"),
+        ("🤖 Mineria Litecoin ⛏️", "https://t.me/litecoingeneratorbot?start=35935")
     ],
     "💎 TON": [
         ("🤖 Gana en TON 💎", "https://t.me/OilTycoonTON_bot/game?startapp=ai_273829196"),
